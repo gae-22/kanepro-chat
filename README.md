@@ -1,11 +1,7 @@
-# リアルタイムチャット機能 統合実装リファレンス【完全版】
-
-## 本ドキュメントの目的
-本ドキュメントは、AWS環境（ECS + RDS）での稼働を前提とした、単一コンテナ構成のリアルタイムチャットシステムの実装リファレンスです。
-研修課題やシステム開発における「セッション認証」「セキュリティ対策（XSS防止）」「インフラ制約（ALBタイムアウト防止）」を網羅したベストプラクティスを提供します。
+# リアルタイムチャット機能
 
 ## 1. 導入技術の概要
-本システムは、JSP/Servletをベースとしつつ、モダンなWebアプリケーションに不可欠な以下の技術・インフラ要素を組み合わせて構築されています。
+本システムは、JSP/Servletをベースとしつつ、以下の技術・インフラ要素を組み合わせて構築されています。
 
 | 技術・インフラ要素 | 概要と本システムでの役割 |
 | :--- | :--- |
@@ -18,7 +14,7 @@
 ---
 
 ## 2. システムアーキテクチャ設計（セキュア・ハイブリッド構成）
-既存のログイン認証（セッション情報）を活かし、悪意のあるユーザーによる「なりすまし」を完全に防ぐため、**「送信はHTTP」「受信はWebSocket」のハイブリッド構成**を採用しています。
+**「送信はHTTP」「受信はWebSocket」のハイブリッド構成**を採用しています。
 
 ### 通信とセキュリティの処理フロー
 1. **【送信】** クライアント（JS）から `ChatServlet` へ、メッセージ本文のみを **HTTP POST** で送信します。
@@ -59,7 +55,6 @@
 ---
 
 ## 4. データベース定義（PostgreSQL）
-ユーザーアカウント管理テーブル（`account`）が既に存在することを前提としています。
 
 ```sql
 CREATE TABLE chat_detail (
@@ -117,7 +112,7 @@ public class MessageDTO {
 ```
 
 **【詳細解説】**
-* **役割:** データの運搬（Data Transfer Object）および、GsonライブラリによるJSON変換のベースとなるクラスです。このクラスのフィールド名が、そのままJavaScript側で受け取るJSONのキー名になります。
+* **役割:** DTOおよび、GsonライブラリによるJSON変換のベースとなるクラスです。このクラスのフィールド名が、そのままJavaScript側で受け取るJSONのキー名になります。
 * **日時のフォーマット処理:** チャット画面では「14:30」のような時刻のみの表示が一般的なため、コンストラクタ内で `LocalDateTime` を用いて、インスタンス生成時に自動で `HH:mm` 形式の文字列としてタイムスタンプを保持する設計にしています。
 
 ---
@@ -282,12 +277,8 @@ public class ChatServlet extends HttpServlet {
     protected void doGet(HttpServletRequest request, HttpServletResponse response) 
             throws ServletException, IOException {
         
-        HttpSession session = request.getSession(false);
-        if (session == null || session.getAttribute("user") == null) {
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "ログインが必要です");
-            return;
-        }
-        
+        HttpSession session = request.getSession();
+
         request.getRequestDispatcher("/WEB-INF/chat.jsp").forward(request, response);
     }
 
@@ -297,11 +288,7 @@ public class ChatServlet extends HttpServlet {
         
         request.setCharacterEncoding("UTF-8");
 
-        HttpSession session = request.getSession(false);
-        if (session == null || session.getAttribute("user") == null) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED); 
-            return;
-        }
+        HttpSession session = request.getSession();
 
         Integer userId = null;
         try {
@@ -331,7 +318,6 @@ public class ChatServlet extends HttpServlet {
 
 **【詳細解説】**
 * **役割:** 画面の表示要求（GET）と、メッセージの送信要求（POST）を受け付けるHTTP窓口です。
-* **サーバー側セッションによる「なりすまし防止」:** POST処理において、クライアントから送信元ユーザーIDを受け取っていません。クライアントからのPOSTデータは悪意あるユーザーによって改ざんされる可能性があるため、**必ずサーバー側で管理している確実なセッション情報（`session.getAttribute("user")`）**から送信元を特定し、なりすましを根本から防いでいます。
 * **バリデーション（防御的プログラミング）:** `chatBody.length() > 500` のように文字数制限を設けることで、大量のテキストを送りつけてサーバーのメモリを枯渇させる攻撃や、スパムを防止しています。
 * **ハイブリッド構成のブリッジ:** DBへの保存完了後、WebSocketを管理する `ChatEndpoint.broadcast(msgDto)` を呼び出し、HTTPで受け取ったデータをWebSocket側へ受け渡す橋渡しを行っています。
 
